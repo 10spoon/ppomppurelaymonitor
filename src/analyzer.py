@@ -16,7 +16,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 COMPARE_MODELS = [
     "openai/gpt-oss-120b:free",
     "google/gemma-3-27b-it:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
 ]
 
 
