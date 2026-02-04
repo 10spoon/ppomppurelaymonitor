@@ -40,6 +40,18 @@ jobs:
             echo "OPENROUTER_API_KEY not set, skipping analysis"
           fi
 
+      - name: Send Telegram notification
+        if: ${{ vars.ENABLE_TELEGRAM != 'false' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            python src/notifier.py
+          else
+            echo "Telegram credentials not set, skipping notification"
+          fi
+
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
