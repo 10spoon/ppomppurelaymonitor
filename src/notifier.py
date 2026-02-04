@@ -32,8 +32,17 @@ def get_latest_analysis() -> dict | None:
     return data[-1]
 
 
+def escape_markdown(text: str) -> str:
+    """텔레그램 MarkdownV2용 특수문자 이스케이프."""
+    # MarkdownV2에서 이스케이프가 필요한 문자들
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
+
+
 def format_message(analysis: dict) -> str:
-    """텔레그램 메시지 형식으로 변환합니다."""
+    """텔레그램 메시지 형식으로 변환합니다 (plain text)."""
     analyzed_at = datetime.fromisoformat(analysis["analyzed_at"])
     time_str = analyzed_at.strftime("%Y-%m-%d %H:%M")
     model = analysis.get("model", "unknown")
@@ -45,11 +54,14 @@ def format_message(analysis: dict) -> str:
     if len(content) > max_content_length:
         content = content[:max_content_length] + "...\n\n(내용이 잘렸습니다)"
 
-    message = f"""📊 *뽐뿌 릴레이 트렌드 분석*
+    # 마크다운 기호 제거하여 plain text로
+    content = content.replace("**", "").replace("*", "").replace("`", "")
+
+    message = f"""📊 뽐뿌 릴레이 트렌드 분석
 
 🕐 {time_str}
 📝 분석 게시물: {post_count}개
-🤖 모델: `{model}`
+🤖 모델: {model}
 
 {content}"""
 
@@ -70,27 +82,18 @@ def send_telegram(message: str) -> bool:
     payload = {
         "chat_id": chat_id,
         "text": message,
-        "parse_mode": "Markdown",
         "disable_web_page_preview": True,
     }
 
     try:
         response = requests.post(url, json=payload, timeout=30)
+        if not response.ok:
+            print(f"텔레그램 API 응답: {response.text}")
         response.raise_for_status()
         print("텔레그램 전송 성공")
         return True
     except requests.exceptions.RequestException as e:
         print(f"텔레그램 전송 실패: {e}")
-        # Markdown 파싱 실패 시 일반 텍스트로 재시도
-        if "can't parse" in str(e).lower() or response.status_code == 400:
-            payload["parse_mode"] = None
-            try:
-                response = requests.post(url, json=payload, timeout=30)
-                response.raise_for_status()
-                print("텔레그램 전송 성공 (일반 텍스트)")
-                return True
-            except Exception as e2:
-                print(f"재시도 실패: {e2}")
         return False
 
 
