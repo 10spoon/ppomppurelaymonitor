@@ -12,11 +12,9 @@ from openai import OpenAI
 KST = timezone(timedelta(hours=9))
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# 비교할 모델 목록
+# 사용할 모델
 COMPARE_MODELS = [
-    "openai/gpt-oss-120b:free",
     "google/gemma-3-27b-it:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
 ]
 
 
