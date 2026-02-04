@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""텔레그램 알림 전송"""
+"""텔레그램 알림 전송 (다중 모델 결과 비교)"""
 
 import json
 import os
@@ -28,42 +28,73 @@ def get_latest_analysis() -> dict | None:
     if not data:
         return None
 
-    # 가장 최근 분석 결과
     return data[-1]
 
 
-def escape_markdown(text: str) -> str:
-    """텔레그램 MarkdownV2용 특수문자 이스케이프."""
-    # MarkdownV2에서 이스케이프가 필요한 문자들
-    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    for char in special_chars:
-        text = text.replace(char, f'\\{char}')
-    return text
+def extract_sns_text(analysis: str) -> str:
+    """분석 결과에서 SNS 홍보 문구만 추출합니다."""
+    # SNS 홍보 문구 섹션 찾기
+    markers = ["SNS 홍보 문구", "SNS 홍보", "홍보 문구", "X/스레드", "트위터"]
+
+    lines = analysis.split("\n")
+    capturing = False
+    result_lines = []
+
+    for line in lines:
+        # 마커 발견 시 캡처 시작
+        if any(marker in line for marker in markers):
+            capturing = True
+            continue
+
+        # 다음 섹션 시작 시 캡처 종료
+        if capturing and line.strip().startswith("#"):
+            break
+
+        if capturing and line.strip():
+            result_lines.append(line)
+
+    # 캡처된 내용이 있으면 반환
+    if result_lines:
+        return "\n".join(result_lines).strip()
+
+    # 못 찾으면 마지막 200자 반환 (보통 SNS 문구가 마지막에 있음)
+    return analysis[-300:].strip() if len(analysis) > 300 else analysis
 
 
-def format_message(analysis: dict) -> str:
-    """텔레그램 메시지 형식으로 변환합니다 (plain text)."""
-    analyzed_at = datetime.fromisoformat(analysis["analyzed_at"])
+def format_message(entry: dict) -> str:
+    """텔레그램 메시지 형식으로 변환합니다."""
+    analyzed_at = datetime.fromisoformat(entry["analyzed_at"])
     time_str = analyzed_at.strftime("%Y-%m-%d %H:%M")
-    post_count = analysis.get("post_count", 0)
-    content = analysis.get("analysis", "분석 결과 없음")
+    post_count = entry.get("post_count", 0)
+    results = entry.get("results", [])
 
-    # 텔레그램 메시지 길이 제한 (4096자)
-    max_content_length = 3500
-    if len(content) > max_content_length:
-        content = content[:max_content_length] + "...\n\n(내용이 잘렸습니다)"
+    # 기존 형식 호환 (단일 모델)
+    if not results and "analysis" in entry:
+        results = [{"model": entry.get("model", "unknown"), "analysis": entry["analysis"]}]
 
-    # 마크다운 기호 제거하여 plain text로
-    content = content.replace("**", "").replace("*", "").replace("`", "")
+    message_parts = [
+        f"📊 뽐뿌 릴레이 트렌드 ({time_str})",
+        f"📝 분석 게시물: {post_count}개",
+        f"🤖 모델 비교: {len(results)}개",
+        "",
+    ]
 
-    message = f"""📊 뽐뿌 릴레이 트렌드 분석
+    for i, r in enumerate(results, 1):
+        model_name = r["model"].split("/")[-1].replace(":free", "")
+        sns_text = extract_sns_text(r["analysis"])
 
-🕐 {time_str}
-📝 분석 게시물: {post_count}개
+        # 마크다운 기호 제거
+        sns_text = sns_text.replace("**", "").replace("*", "").replace("`", "")
 
-{content}"""
+        # 너무 길면 자르기
+        if len(sns_text) > 500:
+            sns_text = sns_text[:500] + "..."
 
-    return message
+        message_parts.append(f"━━━ {i}. {model_name} ━━━")
+        message_parts.append(sns_text)
+        message_parts.append("")
+
+    return "\n".join(message_parts)
 
 
 def send_telegram(message: str) -> bool:
@@ -76,6 +107,10 @@ def send_telegram(message: str) -> bool:
         return False
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+
+    # 메시지 길이 제한 (4096자)
+    if len(message) > 4000:
+        message = message[:4000] + "\n\n(메시지가 잘렸습니다)"
 
     payload = {
         "chat_id": chat_id,
@@ -98,12 +133,12 @@ def send_telegram(message: str) -> bool:
 def main():
     print(f"[{datetime.now(KST).isoformat()}] 텔레그램 알림 전송 시작...")
 
-    analysis = get_latest_analysis()
-    if not analysis:
+    entry = get_latest_analysis()
+    if not entry:
         print("전송할 분석 결과가 없습니다.")
         return
 
-    message = format_message(analysis)
+    message = format_message(entry)
     print(f"메시지 길이: {len(message)}자")
 
     success = send_telegram(message)
