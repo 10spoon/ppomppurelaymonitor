@@ -1,16 +1,55 @@
 #!/usr/bin/env python3
-"""AI 기반 트렌드 분석기"""
+"""AI 기반 트렌드 분석기 - OpenRouter 연동"""
 
 import json
 import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import requests
 from openai import OpenAI
 
 KST = timezone(timedelta(hours=9))
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-MODEL = "openai/gpt-oss-20b:free"
+
+# 무료 모델 우선순위 (fallback 순서)
+FREE_MODELS = [
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "google/gemma-3-1b-it:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "qwen/qwen3-4b:free",
+]
+
+
+def get_available_free_models(api_key: str) -> list[str]:
+    """OpenRouter API에서 사용 가능한 무료 모델 목록을 가져옵니다."""
+    try:
+        response = requests.get(
+            f"{OPENROUTER_BASE_URL}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        models = response.json().get("data", [])
+
+        # 무료 모델 필터링 (pricing이 0이거나 :free 접미사)
+        free_models = []
+        for model in models:
+            model_id = model.get("id", "")
+            pricing = model.get("pricing", {})
+
+            is_free = (
+                ":free" in model_id
+                or (pricing.get("prompt") == "0" and pricing.get("completion") == "0")
+            )
+
+            if is_free:
+                free_models.append(model_id)
+
+        return free_models
+    except Exception as e:
+        print(f"모델 목록 조회 실패: {e}")
+        return []
 
 
 def load_recent_data(hours: int = 24) -> list[dict]:
@@ -51,17 +90,8 @@ def load_recent_data(hours: int = 24) -> list[dict]:
     return unique_posts
 
 
-def analyze_with_ai(posts: list[dict]) -> str:
-    """OpenRouter API를 사용하여 트렌드를 분석합니다."""
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        return "Error: OPENROUTER_API_KEY not set"
-
-    client = OpenAI(
-        base_url=OPENROUTER_BASE_URL,
-        api_key=api_key,
-    )
-
+def analyze_with_ai(posts: list[dict], model: str, client: OpenAI) -> str | None:
+    """지정된 모델로 트렌드를 분석합니다."""
     # 제목 목록 준비
     titles = [f"- {post['title']}" for post in posts[:100]]  # 최대 100개
     titles_text = "\n".join(titles)
@@ -79,16 +109,61 @@ def analyze_with_ai(posts: list[dict]) -> str:
 
 간결하게 분석해주세요 (한국어로)."""
 
-    response = client.chat.completions.create(
-        model=MODEL,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        content = response.choices[0].message.content
+        # 빈 응답 체크
+        if content and content.strip():
+            return content
+        return None
+
+    except Exception as e:
+        print(f"  모델 {model} 실패: {e}")
+        return None
+
+
+def analyze_with_fallback(posts: list[dict]) -> tuple[str, str]:
+    """여러 무료 모델을 시도하여 분석합니다. (model, result) 반환"""
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        return "", "Error: OPENROUTER_API_KEY not set"
+
+    client = OpenAI(
+        base_url=OPENROUTER_BASE_URL,
+        api_key=api_key,
     )
 
-    return response.choices[0].message.content
+    # 사용 가능한 무료 모델 조회
+    available = get_available_free_models(api_key)
+    print(f"사용 가능한 무료 모델: {len(available)}개")
+
+    # 우선순위 모델 + 동적으로 발견된 모델
+    models_to_try = []
+    for model in FREE_MODELS:
+        if model in available or not available:  # available이 비면 그냥 시도
+            models_to_try.append(model)
+
+    # 추가로 발견된 무료 모델 (우선순위에 없는 것들)
+    for model in available:
+        if model not in models_to_try:
+            models_to_try.append(model)
+
+    # Fallback 시도
+    for model in models_to_try[:5]:  # 최대 5개 모델 시도
+        print(f"모델 시도: {model}")
+        result = analyze_with_ai(posts, model, client)
+        if result:
+            return model, result
+
+    return "", "Error: 모든 모델에서 분석 실패"
 
 
-def save_analysis(analysis: str, post_count: int) -> str:
+def save_analysis(analysis: str, post_count: int, model: str) -> str:
     """분석 결과를 저장합니다."""
     now = datetime.now(KST)
     date_str = now.strftime("%Y-%m-%d")
@@ -108,6 +183,7 @@ def save_analysis(analysis: str, post_count: int) -> str:
 
     entry = {
         "analyzed_at": now.isoformat(),
+        "model": model,
         "post_count": post_count,
         "analysis": analysis,
     }
@@ -129,11 +205,14 @@ def main():
         print("분석하기에 데이터가 부족합니다 (최소 5개 필요)")
         return
 
-    analysis = analyze_with_ai(posts)
+    model, analysis = analyze_with_fallback(posts)
+
     print("\n=== 분석 결과 ===")
+    if model:
+        print(f"사용 모델: {model}")
     print(analysis)
 
-    analysis_file = save_analysis(analysis, len(posts))
+    analysis_file = save_analysis(analysis, len(posts), model)
     print(f"\n저장 완료: {analysis_file}")
 
 
