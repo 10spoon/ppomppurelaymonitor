@@ -45,7 +45,6 @@ def format_message(analysis: dict) -> str:
     """텔레그램 메시지 형식으로 변환합니다 (plain text)."""
     analyzed_at = datetime.fromisoformat(analysis["analyzed_at"])
     time_str = analyzed_at.strftime("%Y-%m-%d %H:%M")
-    model = analysis.get("model", "unknown")
     post_count = analysis.get("post_count", 0)
     content = analysis.get("analysis", "분석 결과 없음")
 
@@ -61,7 +60,6 @@ def format_message(analysis: dict) -> str:
 
 🕐 {time_str}
 📝 분석 게시물: {post_count}개
-🤖 모델: {model}
 
 {content}"""
 
