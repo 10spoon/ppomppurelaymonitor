@@ -6,9 +6,11 @@ import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-import anthropic
+from openai import OpenAI
 
 KST = timezone(timedelta(hours=9))
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+MODEL = "openai/gpt-oss-20b:free"
 
 
 def load_recent_data(hours: int = 24) -> list[dict]:
@@ -50,12 +52,15 @@ def load_recent_data(hours: int = 24) -> list[dict]:
 
 
 def analyze_with_ai(posts: list[dict]) -> str:
-    """Claude API를 사용하여 트렌드를 분석합니다."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    """OpenRouter API를 사용하여 트렌드를 분석합니다."""
+    api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
-        return "Error: ANTHROPIC_API_KEY not set"
+        return "Error: OPENROUTER_API_KEY not set"
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = OpenAI(
+        base_url=OPENROUTER_BASE_URL,
+        api_key=api_key,
+    )
 
     # 제목 목록 준비
     titles = [f"- {post['title']}" for post in posts[:100]]  # 최대 100개
@@ -74,13 +79,13 @@ def analyze_with_ai(posts: list[dict]) -> str:
 
 간결하게 분석해주세요 (한국어로)."""
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
+    response = client.chat.completions.create(
+        model=MODEL,
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
 
-    return message.content[0].text
+    return response.choices[0].message.content
 
 
 def save_analysis(analysis: str, post_count: int) -> str:
