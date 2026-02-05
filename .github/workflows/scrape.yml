@@ -2,8 +2,8 @@ name: Scrape Ppomppu Relay
 
 on:
   schedule:
-    # 매시간 정각에 실행 (UTC 기준, KST -9시간)
-    - cron: '0 * * * *'
+    # 매시간 45분에 실행 (UTC 기준, KST -9시간)
+    - cron: '45 * * * *'
   workflow_dispatch:  # 수동 실행
 
 jobs:
