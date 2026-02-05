@@ -33,12 +33,7 @@ jobs:
         if: ${{ vars.ENABLE_AI_ANALYSIS != 'false' }}
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: |
-          if [ -n "$OPENROUTER_API_KEY" ]; then
-            python src/analyzer.py
-          else
-            echo "OPENROUTER_API_KEY not set, skipping analysis"
-          fi
+        run: python src/analyzer.py
 
       - name: Send Telegram notification
         if: ${{ vars.ENABLE_TELEGRAM != 'false' }}

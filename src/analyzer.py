@@ -142,6 +142,11 @@ def analyze_with_multiple_models(posts: list[dict]) -> list[dict]:
     return results
 
 
+def build_error_result(message: str) -> list[dict]:
+    """에러 메시지를 텔레그램으로 보내기 위한 단일 결과 형식."""
+    return [{"model": "error", "analysis": message}]
+
+
 def save_analysis(results: list[dict], post_count: int) -> str:
     """분석 결과를 저장합니다."""
     now = datetime.now(KST)
@@ -180,9 +185,16 @@ def main():
 
     if len(posts) < 5:
         print("분석하기에 데이터가 부족합니다 (최소 5개 필요)")
+        results = build_error_result(
+            f"분석 불가: 데이터 부족 ({len(posts)}개, 최소 5개 필요)"
+        )
+        analysis_file = save_analysis(results, len(posts))
+        print(f"\n저장 완료: {analysis_file}")
         return
 
     results = analyze_with_multiple_models(posts)
+    if not results:
+        results = build_error_result("분석 실패: 모든 모델 호출 실패 또는 빈 응답")
 
     print(f"\n=== 분석 완료: {len(results)}개 모델 성공 ===")
     for r in results:
