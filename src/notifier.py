@@ -9,6 +9,7 @@ from pathlib import Path
 import requests
 
 KST = timezone(timedelta(hours=9))
+MAX_BODY_LEN = 3000
 
 
 def get_latest_analysis() -> dict | None:
@@ -36,25 +37,35 @@ def clean_text(text: str) -> str:
     return text.replace("**", "").replace("*", "").replace("`", "").replace("##", "").replace("#", "")
 
 
-def format_single_model_message(entry: dict, result: dict, index: int, total: int) -> str:
-    """단일 모델 결과를 메시지로 변환합니다."""
+def build_header(entry: dict, result: dict, index: int, total: int) -> str:
+    """단일 모델 결과 헤더를 생성합니다."""
     analyzed_at = datetime.fromisoformat(entry["analyzed_at"])
     time_str = analyzed_at.strftime("%H:%M")
     post_count = entry.get("post_count", 0)
 
     model_name = result["model"].split("/")[-1].replace(":free", "")
-    analysis = clean_text(result["analysis"])
+    header = f"""📊 [{index}/{total}] {model_name}
+🕐 {time_str} | 📝 {post_count}개 게시물 분석"""
+    return header
 
-    # 너무 길면 자르기 (텔레그램 4096자 제한)
-    if len(analysis) > 3500:
-        analysis = analysis[:3500] + "\n\n(내용이 잘렸습니다)"
 
-    message = f"""📊 [{index}/{total}] {model_name}
-🕐 {time_str} | 📝 {post_count}개 게시물 분석
+def split_text(text: str, max_len: int) -> list[str]:
+    """텍스트를 max_len 이하로 분할합니다."""
+    if not text:
+        return [""]
 
-{analysis}"""
+    parts = []
+    remaining = text
 
-    return message
+    while len(remaining) > max_len:
+        cut = remaining.rfind("\n", 0, max_len)
+        if cut == -1:
+            cut = max_len
+        parts.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip("\n")
+
+    parts.append(remaining)
+    return parts
 
 
 def send_telegram(message: str) -> bool:
@@ -107,10 +118,26 @@ def main():
     success_count = 0
 
     for i, result in enumerate(results, 1):
-        message = format_single_model_message(entry, result, i, total)
-        print(f"\n[{i}/{total}] {result['model']} 전송 중... ({len(message)}자)")
+        header = build_header(entry, result, i, total)
+        analysis = clean_text(result.get("analysis", "")) or "분석 결과 없음"
+        parts = split_text(analysis, MAX_BODY_LEN)
 
-        if send_telegram(message):
+        print(f"\n[{i}/{total}] {result['model']} 전송 중... ({len(parts)}파트)")
+        all_sent = True
+
+        for p_index, part in enumerate(parts, 1):
+            if len(parts) > 1:
+                part_header = f"{header}\n(파트 {p_index}/{len(parts)})"
+            else:
+                part_header = header
+
+            message = f"{part_header}\n\n{part}"
+            print(f"  - 파트 {p_index}: {len(message)}자")
+
+            if not send_telegram(message):
+                all_sent = False
+
+        if all_sent:
             print(f"  ✓ 전송 성공")
             success_count += 1
         else:

@@ -20,14 +20,14 @@ COMPARE_MODELS = [
 ]
 
 
-def load_recent_data(hours: int = 24) -> list[dict]:
-    """최근 N시간 동안 수집된 데이터를 로드합니다."""
+def load_latest_scrape() -> list[dict]:
+    """가장 최근 스크래핑 1회분 데이터를 로드합니다."""
     script_dir = Path(__file__).parent.parent
     log_dir = script_dir / "data" / "logs"
 
-    all_posts = []
     now = datetime.now(KST)
-    cutoff = now - timedelta(hours=hours)
+    latest_entry = None
+    latest_time = None
 
     for i in range(2):
         date = now - timedelta(days=i)
@@ -40,20 +40,23 @@ def load_recent_data(hours: int = 24) -> list[dict]:
             data = json.load(f)
 
         for entry in data:
-            collected_at = datetime.fromisoformat(entry["collected_at"])
-            if collected_at >= cutoff:
-                for post in entry["posts"]:
-                    post["collected_at"] = entry["collected_at"]
-                    all_posts.append(post)
+            try:
+                collected_at = datetime.fromisoformat(entry["collected_at"])
+            except Exception:
+                continue
 
-    seen_ids = set()
-    unique_posts = []
-    for post in all_posts:
-        if post["id"] not in seen_ids:
-            seen_ids.add(post["id"])
-            unique_posts.append(post)
+            if latest_time is None or collected_at > latest_time:
+                latest_time = collected_at
+                latest_entry = entry
 
-    return unique_posts
+    if not latest_entry:
+        return []
+
+    posts = latest_entry.get("posts", [])
+    for post in posts:
+        post["collected_at"] = latest_entry.get("collected_at")
+
+    return posts
 
 
 def analyze_with_ai(posts: list[dict], model: str, client: OpenAI) -> str | None:
@@ -181,7 +184,7 @@ def save_analysis(results: list[dict], post_count: int) -> str:
 def main():
     print(f"[{datetime.now(KST).isoformat()}] 트렌드 분석 시작...")
 
-    posts = load_recent_data(hours=24)
+    posts = load_latest_scrape()
     print(f"분석 대상 게시물: {len(posts)}개")
 
     if len(posts) < 5:
