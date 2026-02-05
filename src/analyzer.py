@@ -15,6 +15,8 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # 사용할 모델
 COMPARE_MODELS = [
     "google/gemma-3-27b-it:free",
+    "z-ai/glm-4.5-air:free",
+    "openai/gpt-oss-120b:free",
 ]
 
 
