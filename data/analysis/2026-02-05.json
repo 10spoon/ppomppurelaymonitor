@@ -48,5 +48,15 @@
     "analyzed_at": "2026-02-05T08:10:54.775317+09:00",
     "post_count": 437,
     "results": []
+  },
+  {
+    "analyzed_at": "2026-02-05T09:41:36.367566+09:00",
+    "post_count": 467,
+    "results": [
+      {
+        "model": "error",
+        "analysis": "분석 실패: 모든 모델 호출 실패 또는 빈 응답"
+      }
+    ]
   }
 ]
