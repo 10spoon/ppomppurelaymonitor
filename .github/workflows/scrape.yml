@@ -2,8 +2,8 @@ name: Scrape Ppomppu Relay
 
 on:
   schedule:
-    # 매시간 45분에 실행 (UTC 기준, KST -9시간)
-    - cron: '45 * * * *'
+    # 매 30분 실행 (UTC 기준, KST -9시간)
+    - cron: '*/30 * * * *'
   workflow_dispatch:  # 수동 실행
 
 jobs:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,34 +31,17 @@ jobs:
       - name: Run scraper
         run: python src/scraper.py
 
-      - name: Run AI analysis
-        if: ${{ vars.ENABLE_AI_ANALYSIS != 'false' }}
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: python src/analyzer.py
-
-      - name: Send Telegram notification
-        if: ${{ vars.ENABLE_TELEGRAM != 'false' }}
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-            python src/notifier.py
-          else
-            echo "Telegram credentials not set, skipping notification"
-          fi
-
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add data/
+          git add data/logs/
 
           # 변경사항이 있을 때만 커밋
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
             git commit -m "chore: update data $(date -u '+%Y-%m-%d %H:%M') UTC"
+            git pull --rebase
             git push
           fi

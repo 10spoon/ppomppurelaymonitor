@@ -20,14 +20,13 @@ COMPARE_MODELS = [
 ]
 
 
-def load_latest_scrape() -> list[dict]:
-    """가장 최근 스크래핑 1회분 데이터를 로드합니다."""
+def load_recent_scrapes(max_entries: int = 1) -> list[dict]:
+    """최근 N회 스크래핑 데이터를 로드합니다."""
     script_dir = Path(__file__).parent.parent
     log_dir = script_dir / "data" / "logs"
 
     now = datetime.now(KST)
-    latest_entry = None
-    latest_time = None
+    entries: list[tuple[datetime, dict]] = []
 
     for i in range(2):
         date = now - timedelta(days=i)
@@ -44,19 +43,33 @@ def load_latest_scrape() -> list[dict]:
                 collected_at = datetime.fromisoformat(entry["collected_at"])
             except Exception:
                 continue
+            entries.append((collected_at, entry))
 
-            if latest_time is None or collected_at > latest_time:
-                latest_time = collected_at
-                latest_entry = entry
-
-    if not latest_entry:
+    if not entries:
         return []
 
-    posts = latest_entry.get("posts", [])
-    for post in posts:
-        post["collected_at"] = latest_entry.get("collected_at")
+    entries.sort(key=lambda x: x[0])
+    if max_entries < 1:
+        max_entries = 1
+    entries = entries[-max_entries:]
 
-    return posts
+    all_posts: list[dict] = []
+    for _, entry in entries:
+        for post in entry.get("posts", []):
+            post["collected_at"] = entry.get("collected_at")
+            all_posts.append(post)
+
+    seen_ids = set()
+    unique_posts = []
+    for post in all_posts:
+        post_id = post.get("id")
+        if post_id and post_id in seen_ids:
+            continue
+        if post_id:
+            seen_ids.add(post_id)
+        unique_posts.append(post)
+
+    return unique_posts
 
 
 def analyze_with_ai(posts: list[dict], model: str, client: OpenAI) -> str | None:
@@ -184,8 +197,9 @@ def save_analysis(results: list[dict], post_count: int) -> str:
 def main():
     print(f"[{datetime.now(KST).isoformat()}] 트렌드 분석 시작...")
 
-    posts = load_latest_scrape()
-    print(f"분석 대상 게시물: {len(posts)}개")
+    recent_scrapes = int(os.environ.get("ANALYSIS_RECENT_SCRAPES", "1"))
+    posts = load_recent_scrapes(recent_scrapes)
+    print(f"분석 대상 게시물: {len(posts)}개 (최근 {recent_scrapes}회 스크래핑)")
 
     if len(posts) < 5:
         print("분석하기에 데이터가 부족합니다 (최소 5개 필요)")

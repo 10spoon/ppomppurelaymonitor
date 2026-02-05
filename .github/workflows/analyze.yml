@@ -1,0 +1,63 @@
+name: Analyze Ppomppu Relay
+
+on:
+  schedule:
+    # 3시간마다 실행 (UTC 기준, KST -9시간)
+    - cron: '20 */3 * * *'
+  workflow_dispatch:  # 수동 실행
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # 커밋을 위한 권한
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AI analysis
+        if: ${{ vars.ENABLE_AI_ANALYSIS != 'false' }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ANALYSIS_RECENT_SCRAPES: '6'
+        run: python src/analyzer.py
+
+      - name: Send Telegram notification
+        if: ${{ vars.ENABLE_TELEGRAM != 'false' && vars.ENABLE_AI_ANALYSIS != 'false' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            python src/notifier.py
+          else
+            echo "Telegram credentials not set, skipping notification"
+          fi
+
+      - name: Commit and push analysis
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/analysis/
+
+          # 변경사항이 있을 때만 커밋
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update analysis $(date -u '+%Y-%m-%d %H:%M') UTC"
+            git pull --rebase
+            git push
+          fi
