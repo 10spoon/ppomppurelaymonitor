@@ -2,7 +2,6 @@
 """뽐뿌 릴레이 게시판 스크래퍼"""
 
 import json
-import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -77,7 +76,39 @@ def fetch_posts() -> list[dict]:
     return posts
 
 
-def save_log(posts: list[dict]) -> str:
+def load_latest_log_entry() -> dict | None:
+    """가장 최근 스크래핑 로그 1건을 반환합니다."""
+    script_dir = Path(__file__).parent.parent
+    log_dir = script_dir / "data" / "logs"
+
+    now = datetime.now(KST)
+    latest_entry = None
+    latest_time = None
+
+    for i in range(2):
+        date = now - timedelta(days=i)
+        log_file = log_dir / f"{date.strftime('%Y-%m-%d')}.json"
+
+        if not log_file.exists():
+            continue
+
+        with open(log_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        for entry in data:
+            try:
+                collected_at = datetime.fromisoformat(entry["collected_at"])
+            except Exception:
+                continue
+
+            if latest_time is None or collected_at > latest_time:
+                latest_time = collected_at
+                latest_entry = entry
+
+    return latest_entry
+
+
+def save_log(posts: list[dict], raw_post_count: int | None = None) -> str:
     """수집한 데이터를 JSON 파일에 저장합니다."""
     now = datetime.now(KST)
     date_str = now.strftime("%Y-%m-%d")
@@ -102,6 +133,8 @@ def save_log(posts: list[dict]) -> str:
         "post_count": len(posts),
         "posts": posts,
     }
+    if raw_post_count is not None:
+        entry["raw_post_count"] = raw_post_count
     data.append(entry)
 
     # 저장
@@ -114,19 +147,34 @@ def save_log(posts: list[dict]) -> str:
 def main():
     print(f"[{datetime.now(KST).isoformat()}] 스크래핑 시작...")
 
-    posts = fetch_posts()
-    print(f"수집된 게시물: {len(posts)}개")
+    raw_posts = fetch_posts()
+    latest_entry = load_latest_log_entry()
+
+    if latest_entry:
+        seen_ids = {
+            post.get("id")
+            for post in latest_entry.get("posts", [])
+            if post.get("id")
+        }
+        posts = [
+            post for post in raw_posts
+            if not post.get("id") or post.get("id") not in seen_ids
+        ]
+    else:
+        posts = raw_posts
+
+    print(f"수집된 게시물: {len(raw_posts)}개 (신규 {len(posts)}개)")
+
+    log_file = save_log(posts, raw_post_count=len(raw_posts))
+    print(f"저장 완료: {log_file}")
 
     if posts:
-        log_file = save_log(posts)
-        print(f"저장 완료: {log_file}")
-
-        # 최근 5개 제목 출력
+        # 신규 5개 제목 출력
         print("\n최근 게시물:")
         for post in posts[:5]:
             print(f"  - {post['title']}")
     else:
-        print("수집된 게시물이 없습니다.")
+        print("신규 게시물이 없습니다.")
 
 
 if __name__ == "__main__":
