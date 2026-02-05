@@ -11,6 +11,7 @@ from openai import OpenAI
 
 KST = timezone(timedelta(hours=9))
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+MAX_TITLES = 500
 
 # 사용할 모델
 COMPARE_MODELS = [
@@ -74,7 +75,7 @@ def load_recent_scrapes(max_entries: int = 1) -> list[dict]:
 
 def analyze_with_ai(posts: list[dict], model: str, client: OpenAI) -> str | None:
     """지정된 모델로 트렌드를 분석합니다."""
-    titles = [f"- {post['title']}" for post in posts[:100]]
+    titles = [f"- {post['title']}" for post in posts[:MAX_TITLES]]
     titles_text = "\n".join(titles)
 
     prompt = f"""다음은 뽐뿌 릴레이 게시판에서 최근 수집된 게시물 제목들입니다.
@@ -197,7 +198,11 @@ def save_analysis(results: list[dict], post_count: int) -> str:
 def main():
     print(f"[{datetime.now(KST).isoformat()}] 트렌드 분석 시작...")
 
-    recent_scrapes = int(os.environ.get("ANALYSIS_RECENT_SCRAPES", "1"))
+    env_value = os.environ.get("ANALYSIS_RECENT_SCRAPES", "").strip()
+    try:
+        recent_scrapes = int(env_value) if env_value else 6
+    except ValueError:
+        recent_scrapes = 6
     posts = load_recent_scrapes(recent_scrapes)
     print(f"분석 대상 게시물: {len(posts)}개 (최근 {recent_scrapes}회 스크래핑)")
 

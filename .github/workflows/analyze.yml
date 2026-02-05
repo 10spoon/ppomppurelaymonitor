@@ -3,7 +3,7 @@ name: Analyze Ppomppu Relay
 on:
   schedule:
     # 3시간마다 실행 (UTC 기준, KST -9시간)
-    - cron: '20 */3 * * *'
+    - cron: '45 */3 * * *'
   workflow_dispatch:  # 수동 실행
 
 jobs:
@@ -32,7 +32,7 @@ jobs:
         if: ${{ vars.ENABLE_AI_ANALYSIS != 'false' }}
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          ANALYSIS_RECENT_SCRAPES: '6'
+          ANALYSIS_RECENT_SCRAPES: ${{ vars.ANALYSIS_RECENT_SCRAPES }}
         run: python src/analyzer.py
 
       - name: Send Telegram notification
