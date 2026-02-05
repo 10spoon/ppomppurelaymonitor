@@ -124,12 +124,72 @@ def analyze_with_ai(posts: list[dict], model: str, client: OpenAI) -> str | None
 
         content = response.choices[0].message.content
         if content and content.strip():
-            return content
+            fixed = ensure_complete_sns_copy(content, posts, client, model)
+            return fixed
         return None
 
     except Exception as e:
         print(f"  모델 {model} 실패: {e}")
         return None
+
+
+def ensure_complete_sns_copy(text: str, posts: list[dict], client: OpenAI, model: str) -> str:
+    """SNS 문구가 중간에 끊겼다면 보완합니다."""
+    if "SNS 홍보 문구" not in text:
+        return text
+
+    if text.count('"') % 2 == 0:
+        return text
+
+    sns_line = generate_sns_copy(posts, client, model)
+    if not sns_line:
+        return text + "\n\n(문구가 중간에 끊겼습니다)"
+
+    lines = text.splitlines()
+    last_quote_idx = None
+    for i, line in enumerate(lines):
+        if '"' in line:
+            last_quote_idx = i
+    if last_quote_idx is None:
+        return text + "\n\n" + sns_line
+
+    kept = lines[:last_quote_idx]
+    kept.append(sns_line)
+    return "\n".join(kept)
+
+
+def generate_sns_copy(posts: list[dict], client: OpenAI, model: str) -> str | None:
+    """SNS 홍보 문구만 별도 생성합니다."""
+    titles = [f"- {post['title']}" for post in posts[:100]]
+    titles_text = "\n".join(titles)
+
+    prompt = f"""아래 게시물 제목을 참고해서 SNS 홍보 문구 1개만 작성해주세요.
+
+조건:
+- 분석적 말투와 제안형 문장
+- 광고 말투 금지 ("~해보세요", "~있어요")
+- 이모지는 1-2개만, 없어도 됨
+- 해시태그 2개 이하
+- 100자 내외
+- 따옴표로 감싸서 1줄로만 출력
+
+## 게시물 제목 ({len(posts)}개 중 100개)
+{titles_text}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = response.choices[0].message.content
+        if content:
+            return content.strip().splitlines()[0]
+    except Exception as e:
+        print(f"  SNS 문구 보완 실패: {e}")
+
+    return None
 
 
 def analyze_with_multiple_models(posts: list[dict]) -> list[dict]:
